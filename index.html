@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>長輩圖產生器 (完美置中版)</title>
+<title>長輩圖神器 (天氣日期版)</title>
 <style>
-  /* --- CSS 樣式 (保持不變) --- */
+  /* --- CSS 樣式 --- */
   :root {
     --bg-color: #FFF9E1;
     --primary-color: #d32f2f;
@@ -27,7 +27,8 @@
     color: var(--primary-color);
     margin: 10px 0 20px 0;
     text-align: center;
-    font-size: 1.8rem;
+    font-size: 1.6rem;
+    line-height: 1.4;
   }
 
   .app-container {
@@ -66,6 +67,10 @@
     font-weight: bold;
     pointer-events: none;
     display: none;
+    background: rgba(255,255,255,0.8);
+    padding: 10px 20px;
+    border-radius: 10px;
+    white-space: nowrap;
   }
 
   .controls {
@@ -104,69 +109,181 @@
   #refresh-btn { background-color: #ff9800; }
   #download-btn { background-color: #2e7d32; }
 
+  /* iOS 儲存圖片彈窗 */
+  #save-modal {
+    display: none;
+    position: fixed;
+    z-index: 999;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.95);
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #save-modal img {
+    width: 90%;
+    max-width: 400px;
+    border: 5px solid white;
+    margin-bottom: 20px;
+  }
+
+  #save-modal p {
+    color: yellow;
+    font-size: 1.5rem;
+    font-weight: bold;
+    margin-bottom: 20px;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  #close-modal-btn {
+    background-color: #d32f2f;
+    width: auto;
+    padding: 10px 40px;
+    border: 2px solid white;
+  }
+
 </style>
 </head>
 <body>
 
 <div class="app-container">
-  <h1>✨ 長輩圖神器 ✨</h1>
+  <h1>✨ 智慧長輩圖 ✨<br><span style="font-size:1rem; color:#666;">即時天氣 x 每日問候</span></h1>
 
   <div class="canvas-wrapper">
-    <div id="status-msg">圖片載入中...</div>
+    <div id="status-msg">天氣定位中...</div>
     <canvas id="memeCanvas" width="600" height="600"></canvas>
   </div>
 
   <div class="controls">
     <select id="category-select"></select>
     <button id="refresh-btn">🔄 換一張圖</button>
-    <button id="download-btn">⬇️ 下載圖片</button>
+    <button id="download-btn">⬇️ 下載/儲存圖片</button>
   </div>
 </div>
 
+<div id="save-modal">
+  <p>👇 請長按下方圖片 👇<br>選擇「加入照片」</p>
+  <img id="modal-img" src="" alt="生成的長輩圖">
+  <button id="close-modal-btn">❌ 關閉視窗</button>
+</div>
+
 <script>
-  // 1. 資料庫
+  // --- 1. 資料庫設定 ---
   const memeData = {
-    "早安": { keyword: "morning,nature", phrases: ["早安！美好的一天", "平安喜樂", "祝您順心如意", "早安，記得吃早餐", "健康是福"] },
-    "晚安": { keyword: "night,stars", phrases: ["晚安，好夢連連", "辛苦了，早點休息", "祝你有個寧靜的夜晚", "睡個好覺，明天更好"] },
-    "生日快樂": { keyword: "cake,party", phrases: ["祝你生日快樂！", "生日大吉，福如東海", "天天開心，生日愉快", "願您青春永駐"] },
-    "新年快樂": { keyword: "red,lantern", phrases: ["新年快樂，步步高升", "萬事如意，大吉大利", "恭喜發財，紅包拿來", "鴻運當頭"] },
+    "早安": { keyword: "morning,sunlight,nature", phrases: ["早安！美好的一天", "平安喜樂", "祝您順心如意", "早安，記得吃早餐", "健康是福", "新的一天，活力滿滿"] },
+    "晚安": { keyword: "night,stars,moon", phrases: ["晚安，好夢連連", "辛苦了，早點休息", "祝你有個寧靜的夜晚", "睡個好覺，明天更好", "星光伴您入眠"] },
+    "生日快樂": { keyword: "cake,party,balloons", phrases: ["祝你生日快樂！", "生日大吉，福如東海", "天天開心，生日愉快", "願您青春永駐", "壽比南山"] },
+    "週末愉快": { keyword: "relax,coffee,park", phrases: ["週末愉快，放鬆心情", "享受美好假期", "假日快樂，出門走走", "休息是為了走更長的路"] },
+    "天氣變冷": { keyword: "winter,cold,tea", phrases: ["天冷了，記得多穿件衣服", "注意保暖，身體健康", "寒流來襲，保重身體", "喝杯熱茶，暖暖身子"] },
+    "正能量": { keyword: "motivation,success,road", phrases: ["堅持到底，就是勝利", "知足常樂", "心存善念，必有後福", "活在當下，快樂每一天"] },
+    "新年快樂": { keyword: "red,lantern,new year", phrases: ["新年快樂，步步高升", "萬事如意，大吉大利", "恭喜發財，紅包拿來", "鴻運當頭"] },
     "除夕": { keyword: "dinner,family", phrases: ["除夕團圓，全家平安", "辭舊迎新，好運年年", "年夜飯香，幸福滿堂"] },
     "初一": { keyword: "temple,gold", phrases: ["大年初一走春拜年", "恭喜發財笑哈哈", "開春大吉好兆頭", "初一紅包賺大錢"] },
-    "初二": { keyword: "gift,home", phrases: ["初二回娘家", "喜慶滿全家", "好事成雙", "回門大吉"] },
-    "初三": { keyword: "sleep,bed", phrases: ["初三睡到飽", "健康沒煩惱", "初三安穩", "富貴滿門"] },
-    "初四": { keyword: "money,god", phrases: ["初四接財神", "神光普照", "全家安康", "整年發發發"] },
-    "初五": { keyword: "open,work", phrases: ["初五開工大吉", "五福臨門", "財源廣進", "生意興隆"] },
-    "初六": { keyword: "road,go", phrases: ["初六大順", "萬事亨通", "六六大順", "平安出行"] }
   };
 
+  // --- 2. 變數與 DOM ---
   const canvas = document.getElementById('memeCanvas');
   const ctx = canvas.getContext('2d');
   const statusMsg = document.getElementById('status-msg');
   const categorySelect = document.getElementById('category-select');
+  const saveModal = document.getElementById('save-modal');
+  const modalImg = document.getElementById('modal-img');
   
   let currentCategory = "早安";
   let currentText = "";
+  // 預設天氣資訊 (若抓不到定位時使用)
+  let weatherInfo = {
+    temp: "--",
+    code: -1,
+    city: "定位中"
+  };
 
-  // 初始化選單
-  Object.keys(memeData).forEach(key => {
-    let opt = document.createElement('option');
-    opt.value = key;
-    opt.textContent = key;
-    categorySelect.appendChild(opt);
-  });
+  // --- 3. 初始化 ---
+  function init() {
+    // 填充選單
+    Object.keys(memeData).forEach(key => {
+      let opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      categorySelect.appendChild(opt);
+    });
 
-  categorySelect.addEventListener('change', (e) => {
-    currentCategory = e.target.value;
-    generateContent();
-  });
-  
-  document.getElementById('refresh-btn').addEventListener('click', generateContent);
-  document.getElementById('download-btn').addEventListener('click', downloadImage);
+    // 綁定事件
+    categorySelect.addEventListener('change', (e) => {
+      currentCategory = e.target.value;
+      generateContent();
+    });
+    document.getElementById('refresh-btn').addEventListener('click', generateContent);
+    document.getElementById('download-btn').addEventListener('click', openSaveModal);
+    document.getElementById('close-modal-btn').addEventListener('click', () => saveModal.style.display = 'none');
 
-  generateContent();
+    // 啟動天氣獲取
+    getWeatherData();
+  }
 
+  // --- 4. 氣象邏輯 (Open-Meteo API) ---
+  function getWeatherData() {
+    statusMsg.style.display = 'block';
+    
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = position.coords.latitude;
+          const lon = position.coords.longitude;
+          fetchWeather(lat, lon, "當地");
+        },
+        (error) => {
+          console.warn("拒絕定位或失敗，使用台北預設值");
+          fetchWeather(25.03, 121.56, "台北"); // 預設台北
+        }
+      );
+    } else {
+      fetchWeather(25.03, 121.56, "台北");
+    }
+  }
+
+  function fetchWeather(lat, lon, cityName) {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
+    
+    fetch(url)
+      .then(response => response.json())
+      .then(data => {
+        weatherInfo = {
+          temp: Math.round(data.current_weather.temperature),
+          code: data.current_weather.weathercode,
+          city: cityName
+        };
+        // 天氣抓完後，產生第一張圖
+        generateContent();
+      })
+      .catch(err => {
+        console.error("天氣 API 失敗", err);
+        weatherInfo.city = "台灣"; // 失敗後的備案
+        generateContent();
+      });
+  }
+
+  // 天氣代碼轉 emoji
+  function getWeatherIcon(code) {
+    if (code === -1) return "✨";
+    if (code <= 1) return "☀️"; // 晴天
+    if (code <= 3) return "⛅"; // 多雲
+    if (code <= 48) return "🌫️"; // 霧
+    if (code <= 67) return "🌧️"; // 雨
+    if (code <= 82) return "⛈️"; // 強雨
+    if (code <= 99) return "🌩️"; // 雷雨
+    return "🌥️";
+  }
+
+  // --- 5. 核心生成邏輯 ---
   function generateContent() {
     statusMsg.style.display = 'block';
+    statusMsg.textContent = "圖片生成中...";
     
     const data = memeData[currentCategory];
     currentText = data.phrases[Math.floor(Math.random() * data.phrases.length)];
@@ -174,8 +291,9 @@
     const img = new Image();
     img.crossOrigin = "Anonymous"; 
     
+    // 3秒超時機制
     const timeoutId = setTimeout(() => {
-        console.log("圖片載入太慢，切換為純色背景");
+        console.log("圖片逾時");
         drawCanvas(null);
     }, 3000);
 
@@ -189,19 +307,22 @@
       drawCanvas(null);
     };
 
+    // 使用 Picsum 抓圖
     const randomSeed = Math.floor(Math.random() * 9999);
     img.src = `https://picsum.photos/seed/${randomSeed}/600/600?${data.keyword}`;
   }
 
-  // --- 改進後的繪圖邏輯 (核心修正區) ---
+  // --- 6. 繪圖邏輯 (包含日期與天氣) ---
   function drawCanvas(imgSource) {
-    // 1. 畫背景
+    // 1. 背景
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (imgSource) {
       ctx.drawImage(imgSource, 0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "rgba(0, 0, 0, 0.2)"; // 遮罩
+      // 遮罩
+      ctx.fillStyle = "rgba(0, 0, 0, 0.25)"; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     } else {
+      // 備用漸層背景
       const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
       gradient.addColorStop(0, "#ff9a9e");
       gradient.addColorStop(1, "#fecfef");
@@ -209,82 +330,126 @@
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
-    // 2. 準備文字參數
-    // 根據畫布寬度設定最大文字寬度 (左右各留 40px 邊距)
+    // 2. 中間祝福語 (自動排版)
+    drawMainText();
+
+    // 3. 右下角資訊卡 (日期/天氣)
+    drawInfoCard();
+
+    statusMsg.style.display = 'none';
+  }
+
+  function drawMainText() {
     const maxTextWidth = canvas.width - 80; 
-    let fontSize = 80; // 預設字體大小
+    let fontSize = 80; 
     ctx.font = `900 ${fontSize}px "Microsoft JhengHei", sans-serif`;
     
-    // 3. 自動換行計算 (Smart Wrapping)
     let lines = getLines(ctx, currentText, maxTextWidth);
-    
-    // 如果行數太多，導致太高，自動縮小字體再算一次
-    // 假設超過 3 行就縮小字體
-    if (lines.length > 3) {
+    if (lines.length > 3) { // 字太多就縮小
         fontSize = 60;
         ctx.font = `900 ${fontSize}px "Microsoft JhengHei", sans-serif`;
         lines = getLines(ctx, currentText, maxTextWidth);
     }
 
-    // 4. 計算垂直置中位置
-    const lineHeight = fontSize * 1.3; // 行高設為字體的 1.3 倍
+    const lineHeight = fontSize * 1.3; 
+    // 將文字位置稍微往上提一點，留空間給下方資訊卡
     const totalTextHeight = lines.length * lineHeight;
-    // 起始 Y 座標 = (畫布高度 - 文字總高度) / 2 + (第一行的調整)
-    // 這裡加上 lineHeight / 2 是因為 textBaseline = 'middle'
-    let startY = (canvas.height - totalTextHeight) / 2 + (lineHeight / 2);
+    let startY = (canvas.height - totalTextHeight) / 2 - 20; 
 
-    // 5. 開始繪製每一行
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.strokeStyle = "black";
     ctx.lineWidth = 8;
     ctx.lineJoin = "round";
-    ctx.fillStyle = "#FFFF00"; // 黃色字
+    ctx.fillStyle = "#FFFF00"; 
 
     for (let i = 0; i < lines.length; i++) {
         const y = startY + (i * lineHeight);
-        // 先畫黑邊
         ctx.strokeText(lines[i], canvas.width / 2, y);
-        // 再畫黃字
         ctx.fillText(lines[i], canvas.width / 2, y);
     }
-
-    statusMsg.style.display = 'none';
   }
 
-  // 輔助函式：計算文字該怎麼換行
+  function drawInfoCard() {
+    // 準備資訊
+    const date = new Date();
+    // 格式：1月29日
+    const dateStr = `${date.getMonth() + 1}月${date.getDate()}日`;
+    // 格式：週四
+    const dayNames = ["週日", "週一", "週二", "週三", "週四", "週五", "週六"];
+    const dayStr = dayNames[date.getDay()];
+    // 天氣
+    const weatherIcon = getWeatherIcon(weatherInfo.code);
+    const tempStr = weatherInfo.temp !== "--" ? `${weatherInfo.temp}°C` : "";
+    const cityStr = weatherInfo.city;
+
+    // 資訊卡背景 (右下角)
+    const cardWidth = 240;
+    const cardHeight = 80;
+    const padding = 20;
+    const cardX = canvas.width - cardWidth - padding;
+    const cardY = canvas.height - cardHeight - padding;
+
+    // 畫半透明圓角框
+    ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+    roundRect(ctx, cardX, cardY, cardWidth, cardHeight, 15, true, false);
+
+    // 繪製文字
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = "#d32f2f"; // 深紅色字體
+
+    // 第一行：日期 + 星期
+    ctx.font = "bold 28px 'Microsoft JhengHei'";
+    ctx.fillText(`${dateStr} ${dayStr}`, cardX + 15, cardY + 12);
+
+    // 第二行：地點 + 天氣圖示 + 溫度
+    ctx.font = "bold 24px 'Microsoft JhengHei'";
+    ctx.fillStyle = "#333";
+    ctx.fillText(`${cityStr} ${weatherIcon} ${tempStr}`, cardX + 15, cardY + 45);
+  }
+
+  // 輔助：畫圓角矩形
+  function roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    if (typeof radius === 'undefined') radius = 5;
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+    if (fill) ctx.fill();
+    if (stroke) ctx.stroke();
+  }
+
   function getLines(ctx, text, maxWidth) {
-    let words = text.split(''); // 把字串切成一個個字
+    let words = text.split('');
     let lines = [];
     let currentLine = words[0];
-
     for (let i = 1; i < words.length; i++) {
         let word = words[i];
         let width = ctx.measureText(currentLine + word).width;
-        if (width < maxWidth) {
-            currentLine += word;
-        } else {
-            lines.push(currentLine);
-            currentLine = word;
-        }
+        if (width < maxWidth) currentLine += word;
+        else { lines.push(currentLine); currentLine = word; }
     }
     lines.push(currentLine);
     return lines;
   }
 
-  function downloadImage() {
-    try {
-        const link = document.createElement('a');
-        link.download = `長輩圖-${Date.now()}.jpg`;
-        link.href = canvas.toDataURL("image/jpeg", 0.9);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    } catch (e) {
-        alert("下載失敗，請嘗試長按圖片儲存。");
-    }
+  function openSaveModal() {
+    const dataURL = canvas.toDataURL("image/jpeg", 0.9);
+    modalImg.src = dataURL;
+    saveModal.style.display = 'flex';
   }
-</script>
 
+  // 啟動
+  init();
+
+</script>
 </body>
 </html>
